@@ -302,6 +302,7 @@ def start_browser(
 
     try:
         _sb = sb_cdp.Chrome(url, **kwargs)
+        _sb.maximize()
         return (
             f"Started Pure CDP Mode browser "
             f"(url={url!r}, headless={effective_headless}, "
@@ -490,6 +491,7 @@ def open_url(url: str) -> str:
     """
     sb = _get_sb()
     sb.get(url)
+    sb.solve_captcha()
     return f"Navigated to {url}"
 
 
