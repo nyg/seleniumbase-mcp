@@ -64,9 +64,14 @@ honest for the whole tool, so annotations are intentionally omitted for
 those (title is still provided). See the per-tool comments below.
 """
 from __future__ import annotations
+import asyncio
 import atexit
+import mycdp
 import os
+import re
 import sys
+import time
+from contextlib import suppress
 from functools import wraps
 from pathlib import Path
 from typing import Any, Literal
@@ -77,6 +82,12 @@ from seleniumbase import sb_cdp
 
 mcp = MCPServer("seleniumbase-cdp")
 
+PROFILES_DIR = (
+    Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
+    / "seleniumbase-mcp"
+    / "profiles"
+)
+
 _sb: sb_cdp.CDPMethods | None = None
 
 
@@ -85,6 +96,42 @@ def _get_sb() -> sb_cdp.CDPMethods:
     if _sb is None:
         raise ToolError("No browser session. Call start_browser first.")
     return _sb
+
+
+def _chrome_running(sb: sb_cdp.CDPMethods) -> bool:
+    # One loop tick lets asyncio record a Chrome exit before reading it.
+    sb.loop.run_until_complete(asyncio.sleep(0))
+    return not sb.driver.stopped
+
+
+def _session_usable(sb: sb_cdp.CDPMethods) -> bool:
+    if not _chrome_running(sb):
+        return False
+    with suppress(Exception):
+        sb.loop.run_until_complete(
+            asyncio.wait_for(sb.driver.update_targets(), timeout=3)
+        )
+    return bool(sb.driver.tabs)
+
+
+def _quit(sb: sb_cdp.CDPMethods) -> None:
+    if (
+        sb.driver.config.uses_custom_data_dir
+        and sys.platform != "win32"
+        and _chrome_running(sb)
+    ):
+        # sb.quit() kills Chrome before it writes new cookies to disk,
+        # except on Windows, where it already closes Chrome cleanly.
+        # The timeout covers a Chrome that already exited and never replies.
+        with suppress(Exception):
+            sb.loop.run_until_complete(
+                asyncio.wait_for(
+                    sb.driver.connection.send(mycdp.browser.close()),
+                    timeout=3,
+                )
+            )
+            time.sleep(0.5)
+    sb.quit()
 
 
 def handle_sb_errors(func):
@@ -133,6 +180,7 @@ def start_browser(
     guest: bool = False,
     ad_block: bool = False,
     proxy: str | None = None,
+    profile: str | None = None,
 ) -> str:
     """Launch a persistent SeleniumBase Pure CDP Mode browser session.
 
@@ -172,6 +220,15 @@ def start_browser(
         proxy: Optional proxy server.
             Examples include "SERVER:PORT" or "USER:PASS@SERVER:PORT".
 
+        profile: Optional name of a persistent browser profile, stored in
+            $XDG_DATA_HOME/seleniumbase-mcp/profiles/<profile>
+            (~/.local/share/seleniumbase-mcp/profiles/<profile> by default).
+            Cookies, localStorage, cache and history are kept when the
+            browser closes and reused by the next start_browser call with
+            the same profile name. If omitted, a temporary profile is used
+            and deleted on close. Letters, digits, "_" and "-" only.
+            Do not combine this with incognito=True or guest=True.
+
     Returns:
         A confirmation message when the browser starts successfully,
         or a descriptive error if the browser startup fails.
@@ -186,7 +243,9 @@ def start_browser(
         state between tool calls. Call close_browser when finished.
         If a browser session is already running, this tool does not launch
         another browser and instead returns a message indicating that the
-        existing session is active.
+        existing session is active. If that browser was closed outside of
+        close_browser (Chrome quit, or all its windows closed), the old
+        session is cleaned up and a new browser is launched.
 
     Environment requirements:
         The MCP runtime must have a compatible Chrome or Chromium browser
@@ -196,10 +255,18 @@ def start_browser(
     global _sb
 
     if _sb is not None:
-        return "A browser session is already running."
+        if _session_usable(_sb):
+            return "A browser session is already running."
+        _cleanup_browser()
 
     if incognito and guest:
         return "Error: incognito and guest cannot both be enabled."
+
+    if profile is not None and not re.fullmatch(r"[\w-]+", profile):
+        return "Error: profile may only contain letters, digits, _ and -."
+
+    if profile and (incognito or guest):
+        return "Error: profile cannot be combined with incognito or guest."
 
     if use_chromium and browser_executable_path:
         return (
@@ -230,13 +297,15 @@ def start_browser(
         kwargs["ad_block"] = True
     if proxy:
         kwargs["proxy"] = proxy
+    if profile:
+        kwargs["user_data_dir"] = str(PROFILES_DIR / profile)
 
     try:
         _sb = sb_cdp.Chrome(url, **kwargs)
         return (
             f"Started Pure CDP Mode browser "
             f"(url={url!r}, headless={effective_headless}, "
-            f"use_chromium={use_chromium})"
+            f"use_chromium={use_chromium}, profile={profile!r})"
         )
     except Exception:
         # Retry once if the first launch attempt fails.
@@ -254,7 +323,7 @@ def start_browser(
             return (
                 f"Started Pure CDP Mode browser "
                 f"(url={url!r}, headless={effective_headless}, "
-                f"use_chromium={use_chromium})"
+                f"use_chromium={use_chromium}, profile={profile!r})"
             )
         except Exception as e:
             if _sb is not None:
@@ -285,7 +354,9 @@ def close_browser() -> str:
 
     Call this when the browser automation workflow is finished. Closing the
     session ends the persistent browser state, including its open tabs,
-    cookies, navigation history, and page state. If browser automation is
+    cookies, navigation history, and page state. A session started with a
+    profile keeps its cookies, storage and history on disk for the next
+    start_browser call with that profile. If browser automation is
     needed afterward, start a new session with start_browser.
 
     This operation is safe to call when no browser session is active.
@@ -296,7 +367,7 @@ def close_browser() -> str:
         return "No browser session is currently running."
 
     try:
-        _sb.quit()
+        _quit(_sb)
     except Exception as e:
         return (
             "Error calling `quit()` on the browser session: "
@@ -2032,7 +2103,7 @@ def _cleanup_browser():
 
     if _sb is not None:
         try:
-            _sb.quit()
+            _quit(_sb)
         except Exception:
             pass
         _sb = None

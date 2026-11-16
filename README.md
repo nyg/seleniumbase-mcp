@@ -198,7 +198,7 @@ in the loop at all. Reference:
 
 | Group             | Tool(s)                                                                                                                                          |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Session           | `start_browser(url, headless, use_chromium, browser_executable_path, incognito, guest, ad_block, proxy)`, `close_browser`                        |
+| Session           | `start_browser(url, headless, use_chromium, browser_executable_path, incognito, guest, ad_block, proxy, profile)`, `close_browser`               |
 | Navigation        | `open_url`, `manage_history(action: back/forward/reload/list)`, `get_page_info` (running status, url, title, origin, user agent, history in one call) |
 | Finding & reading | `find_elements(selector, timeout, include_html)`, `get_content(selector, output_format: text/html/urls)`, `get_attributes`, `check_for_condition(check: present/visible/count/text_visible)` |
 | Interacting       | `click_element(selector, nth, all_matches, only_if_visible, parent_selector, timeout, scroll)`, `hover_action(selector1, selector2, action: hover/hover_and_click/drag_and_drop)`, `type_text(mode: fill_input/append/fast_type/set_value/clear_only)`, `select_option(by: text/value/index)`, `focus_element(action: scroll_to_element/focus/highlight)` |
@@ -226,6 +226,7 @@ in the loop at all. Reference:
 - **Session teardown.** `sb.quit()` (used by `close_browser`) is the
   documented way to end a session; the browser also auto-closes if the
   process exits without it.
+- **Persistent profiles.** `start_browser(profile="name")` keeps the browser profile in `$XDG_DATA_HOME/seleniumbase-mcp/profiles/name` (`~/.local/share/seleniumbase-mcp/profiles/name` by default), so cookies, localStorage, cache and history survive `close_browser` and are reused by the next session with the same name. Without `profile`, each session gets a temporary profile that is deleted on close.
 
 ---
 
