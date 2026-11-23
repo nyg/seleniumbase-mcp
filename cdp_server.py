@@ -87,6 +87,7 @@ PROFILES_DIR = (
     / "seleniumbase-mcp"
     / "profiles"
 )
+DEFAULT_PROFILE = "default"
 
 _sb: sb_cdp.CDPMethods | None = None
 
@@ -96,6 +97,13 @@ def _get_sb() -> sb_cdp.CDPMethods:
     if _sb is None:
         raise ToolError("No browser session. Call start_browser first.")
     return _sb
+
+
+def _launch(url: str | None, kwargs: dict[str, Any]) -> sb_cdp.CDPMethods:
+    sb = sb_cdp.Chrome(url, **kwargs)
+    if not kwargs["headless"]:
+        sb.maximize()
+    return sb
 
 
 def _chrome_running(sb: sb_cdp.CDPMethods) -> bool:
@@ -173,7 +181,7 @@ def handle_sb_errors(func):
 )
 def start_browser(
     url: str | None = None,
-    headless: Literal[False, True, None] = None,
+    headless: bool = False,
     use_chromium: bool = False,
     browser_executable_path: str | None = None,
     incognito: bool = False,
@@ -181,6 +189,7 @@ def start_browser(
     ad_block: bool = False,
     proxy: str | None = None,
     profile: str | None = None,
+    blank_profile: bool = False,
 ) -> str:
     """Launch a persistent SeleniumBase Pure CDP Mode browser session.
 
@@ -198,9 +207,9 @@ def start_browser(
             operation to complete before returning. If omitted, the browser
             starts without navigating to a specified URL.
 
-        headless: Controls whether the browser runs without a visible window.
-            True forces headless mode; False forces headed mode. If None, this
-            tool defaults to headless on Linux and headed on Windows/macOS.
+        headless: Run the browser without a visible window. Defaults to
+            False: the window is visible and maximized. Only pass True when
+            the user asks for a background browser.
 
         use_chromium: Use Chromium instead of Google Chrome. This is useful
             when Google Chrome is not installed. SeleniumBase can manage the
@@ -220,14 +229,19 @@ def start_browser(
         proxy: Optional proxy server.
             Examples include "SERVER:PORT" or "USER:PASS@SERVER:PORT".
 
-        profile: Optional name of a persistent browser profile, stored in
+        profile: Name of the persistent browser profile to use, stored in
             $XDG_DATA_HOME/seleniumbase-mcp/profiles/<profile>
             (~/.local/share/seleniumbase-mcp/profiles/<profile> by default).
             Cookies, localStorage, cache and history are kept when the
             browser closes and reused by the next start_browser call with
-            the same profile name. If omitted, a temporary profile is used
-            and deleted on close. Letters, digits, "_" and "-" only.
-            Do not combine this with incognito=True or guest=True.
+            the same profile name. If omitted, the "default" profile is
+            used. Only pass a name when the user asks for another profile.
+            Letters, digits, "_" and "-" only.
+
+        blank_profile: Use a temporary, empty profile that is deleted on
+            close, instead of a persistent one. Defaults to False. Only pass
+            True when the user asks for a blank, clean or fresh profile.
+            incognito=True and guest=True also use no persistent profile.
 
     Returns:
         A confirmation message when the browser starts successfully,
@@ -265,8 +279,11 @@ def start_browser(
     if profile is not None and not re.fullmatch(r"[\w-]+", profile):
         return "Error: profile may only contain letters, digits, _ and -."
 
-    if profile and (incognito or guest):
-        return "Error: profile cannot be combined with incognito or guest."
+    if profile and (blank_profile or incognito or guest):
+        return (
+            "Error: profile cannot be combined with blank_profile, "
+            "incognito or guest."
+        )
 
     if use_chromium and browser_executable_path:
         return (
@@ -274,16 +291,10 @@ def start_browser(
             "cannot both be used at the same time."
         )
 
-    # OS-specific default:
-    # - Linux: headless by default for server/container compatibility.
-    # - Windows/macOS: headed by default for interactive desktop use.
-    # - Explicit True/False always overrides the OS default.
-    if headless is None:
-        effective_headless = sys.platform.startswith("linux")
-    else:
-        effective_headless = headless
+    if not (blank_profile or incognito or guest):
+        profile = profile or DEFAULT_PROFILE
 
-    kwargs: dict[str, Any] = {"headless": effective_headless}
+    kwargs: dict[str, Any] = {"headless": headless}
 
     if use_chromium:
         kwargs["use_chromium"] = True
@@ -300,14 +311,15 @@ def start_browser(
     if profile:
         kwargs["user_data_dir"] = str(PROFILES_DIR / profile)
 
+    started = (
+        f"Started Pure CDP Mode browser "
+        f"(url={url!r}, headless={headless}, "
+        f"use_chromium={use_chromium}, profile={profile!r})"
+    )
+
     try:
-        _sb = sb_cdp.Chrome(url, **kwargs)
-        _sb.maximize()
-        return (
-            f"Started Pure CDP Mode browser "
-            f"(url={url!r}, headless={effective_headless}, "
-            f"use_chromium={use_chromium}, profile={profile!r})"
-        )
+        _sb = _launch(url, kwargs)
+        return started
     except Exception:
         # Retry once if the first launch attempt fails.
         # (A retry helped when testing on Glama's MCP Inspector.)
@@ -320,12 +332,8 @@ def start_browser(
                 except Exception:
                     pass
                 _sb = None
-            _sb = sb_cdp.Chrome(url, **kwargs)
-            return (
-                f"Started Pure CDP Mode browser "
-                f"(url={url!r}, headless={effective_headless}, "
-                f"use_chromium={use_chromium}, profile={profile!r})"
-            )
+            _sb = _launch(url, kwargs)
+            return started
         except Exception as e:
             if _sb is not None:
                 try:
