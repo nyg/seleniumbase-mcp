@@ -78,7 +78,18 @@ from typing import Any, Literal
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
-from seleniumbase import sb_cdp
+
+LAUNCH_DIR = Path.cwd()
+CACHE_DIR = (
+    Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
+    / "seleniumbase-mcp"
+)
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
+# SeleniumBase writes downloaded_files/ (downloads and lock files) into the
+# working directory, read at import time: keep it out of the client's folder.
+os.chdir(CACHE_DIR)
+
+from seleniumbase import sb_cdp  # noqa: E402
 
 mcp = MCPServer("seleniumbase-cdp")
 
@@ -1545,7 +1556,7 @@ def manage_cookies(
     sb = _get_sb()
 
     # Define a safe sandbox directory for cookies
-    cookie_dir = Path("./saved_cookies")
+    cookie_dir = LAUNCH_DIR / "saved_cookies"
     cookie_dir.mkdir(parents=True, exist_ok=True)
 
     if action == "get_all":
@@ -1994,8 +2005,9 @@ def save_page(
             - "page.pdf" for format="pdf"
 
         folder:
-            Optional destination folder passed to SeleniumBase.
-            If omitted, SeleniumBase uses its default output location.
+            Optional destination folder. A relative folder is resolved
+            against the directory the MCP server was started from, which is
+            also where files go when it is omitted.
 
     Side effects and filesystem behavior:
         This tool writes a file to the filesystem and may overwrite an
@@ -2025,6 +2037,7 @@ def save_page(
         filename after the save operation succeeds.
     """
     sb = _get_sb()
+    folder = str(LAUNCH_DIR / folder) if folder else str(LAUNCH_DIR)
 
     if format == "screenshot":
         name = filename or "screenshot.png"
