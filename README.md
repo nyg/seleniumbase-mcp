@@ -226,7 +226,7 @@ in the loop at all. Reference:
 - **Session teardown.** `sb.quit()` (used by `close_browser`) is the
   documented way to end a session; the browser also auto-closes if the
   process exits without it.
-- **Persistent profiles.** Every session uses a persistent browser profile in `$XDG_DATA_HOME/seleniumbase-mcp/profiles/<name>` (`~/.local/share/seleniumbase-mcp/profiles/<name>` by default), so cookies, localStorage, cache and history survive `close_browser`. Without `profile`, the `default` profile is used. `start_browser(blank_profile=True)`, `incognito=True` or `guest=True` use a temporary profile that is deleted on close.
+- **Persistent profiles.** Every session uses a persistent browser profile in `$XDG_DATA_HOME/advanced-web-search/profiles/<name>` (`~/.local/share/advanced-web-search/profiles/<name>` by default), so cookies, localStorage, cache and history survive `close_browser`. Without `profile`, the `default` profile is used. `start_browser(blank_profile=True)`, `incognito=True` or `guest=True` use a temporary profile that is deleted on close.
 - **Visible, maximized window.** `headless` defaults to `False` on every OS, and a visible window is maximized right after launch.
 
 ---

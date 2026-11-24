@@ -82,7 +82,7 @@ from mcp.types import ToolAnnotations
 LAUNCH_DIR = Path.cwd()
 CACHE_DIR = (
     Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
-    / "seleniumbase-mcp"
+    / "advanced-web-search"
 )
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 # SeleniumBase writes downloaded_files/ (downloads and lock files) into the
@@ -95,7 +95,7 @@ mcp = MCPServer("seleniumbase-cdp")
 
 PROFILES_DIR = (
     Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
-    / "seleniumbase-mcp"
+    / "advanced-web-search"
     / "profiles"
 )
 DEFAULT_PROFILE = "default"
@@ -241,8 +241,8 @@ def start_browser(
             Examples include "SERVER:PORT" or "USER:PASS@SERVER:PORT".
 
         profile: Name of the persistent browser profile to use, stored in
-            $XDG_DATA_HOME/seleniumbase-mcp/profiles/<profile>
-            (~/.local/share/seleniumbase-mcp/profiles/<profile> by default).
+            $XDG_DATA_HOME/advanced-web-search/profiles/<profile>
+            (~/.local/share/advanced-web-search/profiles/<profile> by default).
             Cookies, localStorage, cache and history are kept when the
             browser closes and reused by the next start_browser call with
             the same profile name. If omitted, the "default" profile is
